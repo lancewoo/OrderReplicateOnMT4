@@ -30,7 +30,7 @@ extern string  ChannelName = "OrderMonitor";
 extern bool    ReverseOrder = true; // reverse orders by default
 extern double  DupLots = 1; // how many lots do you want to replicate each time?
 extern double  StopLoss = 0.0; // StopLoss for each order
-extern int  Slippage = 3;
+extern int  Slippage = 30;
 extern bool    LogMessagesToDbgView = true;
 
 
@@ -151,19 +151,19 @@ void OnTick()
                     k = OrderSend(symbol, OP_SELL, DupLots, Bid, Slippage, StopLoss, 0
                         , "Reverse-Sell|"+strMsg, StringToInteger(prop[0]));
 
-                    Print( "Reverse-Sell, k=" + k );
+                    Print( "Reverse-Sell, ticket=" + k );
                     if (k<0) {
                         err = GetLastError();
-                        Print( "ErrorCode:" + err + "," + ErrorDescription(err) );
+                        Print( "Reverse-Sell, ErrorCode:" + err + "," + ErrorDescription(err) );
                     }
                 } else {
                     k = OrderSend(symbol, OP_BUY, DupLots, Ask, Slippage, StopLoss, 0
                         , "Reverse-Buy|"+strMsg, StringToInteger(prop[0]));
 
-                    Print( "Reverse-Buy, k=" + k );
+                    Print( "Reverse-Buy, ticket=" + k );
                     if (k<0) {
                         err = GetLastError();
-                        Print( "ErrorCode:" + err + "," + ErrorDescription(err) );
+                        Print( "Reverse-Buy failed, ErrorCode:" + err + "," + ErrorDescription(err) );
                     }
                 }
             } else {
@@ -192,17 +192,20 @@ void OnTick()
                 }
 
                 // close the order now
-                if (prop[3] == "0") {
-                    r = OrderClose(ticket, DupLots, Ask, Slippage);
-                } else {
-                    r = OrderClose(ticket, DupLots, Bid, Slippage);
+                for (int pos=0; pos<10; pos++) {
+                    if (prop[3] == "0") {
+                        r = OrderClose(ticket, DupLots, Ask, Slippage);
+                    } else {
+                        r = OrderClose(ticket, DupLots, Bid, Slippage);
+                    }
+                    if (!r) {
+                        err = GetLastError();
+                        Print("OrderClose("+ticket+") failed ErrorCode:" + err + "," + ErrorDescription(err) + ", try:" + pos);
+                        Sleep( 1000 ); // sleep for 1 second and have another try
+                        continue;
+                    }
+                    break;
                 }
-                if (!r) {
-                    err = GetLastError();
-                    Print("OrderClose() failed ErrorCode:" + err + "," + ErrorDescription(err));
-                    return;
-                }
-
             }
         }
     }

@@ -62,7 +62,7 @@ int OnInit()
         Print( "OnInit(): There are no history orders." );
     }
 
-
+    EventSetMillisecondTimer(250);
     return(INIT_SUCCEEDED);
 }
 
@@ -71,16 +71,15 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+    EventKillTimer();
     // Release resources associated with the sending which was
     // initialised earlier
     QC_ReleaseSender(glbHandle);
     glbHandle = 0;
 }
 
-//+------------------------------------------------------------------+
-//| Expert tick function                                             |
-//+------------------------------------------------------------------+
-void OnTick()
+
+void OnTimer()
 {
     if (glbHandle == 0) {
         Alert("QuickChannel sender handle was not properly initialised!");
@@ -116,7 +115,7 @@ void OnTick()
             // Do not report pending orders
             return;
         }
-        if (ctm>0) Print("Open time for the order :", ctm);
+        if (ctm>0) Print("Open order:" + OrderTicket() + ", OrderType:" + OrderType() + ", Open time:", ctm);
         // build a message like : 355072|GOLD|Open|0|17:05:59|1250.50|0.10
         strMsg = StringConcatenate(IntegerToString(OrderTicket()), "|"
             , OrderSymbol(), "|", "Open", "|"
@@ -146,7 +145,7 @@ void OnTick()
             return;
         }
         datetime ctm = OrderCloseTime();
-        if(ctm>0) Print("History order Close time for the order :", ctm);
+        if(ctm>0) Print("History order:" + OrderTicket() + ", OrderType:" + OrderType() + ", Close time :", ctm);
 
         if (OrderType() > OP_SELL) {
             // Do not report pending orders
@@ -175,15 +174,7 @@ void OnTick()
         Alert("QuickChannel message failed");
     }
 }
-//+------------------------------------------------------------------+
-//| Timer function                                                   |
-//+------------------------------------------------------------------+
-void OnTimer()
-{
-//---
 
-}
-//+------------------------------------------------------------------+
 
 void testOrder() {
 //--- get minimum stop level 
