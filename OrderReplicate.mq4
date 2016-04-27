@@ -27,10 +27,11 @@
 
 // External, user-configurable properties
 extern string  ChannelName = "OrderMonitor";
-extern bool    ReverseOrder = true; // reverse orders by default
-extern double  DupLots = 1; // how many lots do you want to replicate each time?
-extern double  StopLoss = 0.0; // StopLoss for each order
-extern int  Slippage = 30;
+extern string  SymbolIn = "GOLD"; // Symbol to be copied
+extern string  SymbolTrading = "XAUUSD"; // Symbol to be traded
+extern double  DupLots = 1; // Number of lots you want to copy each time
+extern double  StopLoss = 0.0; // Stoploss for each order
+extern int  Slippage = 50; // Slippage pips
 extern bool    LogMessagesToDbgView = true;
 
 
@@ -127,25 +128,39 @@ void OnTick()
 
         string prop[];
         // a message is like :
-        // 355072|GOLD|Close|0|17:05:59|1250.50|0.10
+        // 355072|GOLD|Close|0|R|17:05:59|1250.50|0.10
         // which are properties in sequence:
-        // OrderTicket()|OrderSymbol()|"Open" or "Close"|OrderType() 0 or 1|OrderOpenTime() or OrderCloseTime()
-        // |OrderOpenPrice() or OrderClosePrice()|OrderLots()
+        // OrderTicket()
+        // |OrderSymbol()
+        // |"Open" or "Close"
+        // |OrderType() 0 or 1
+        // |"R" or "F"
+        // |OrderOpenTime() or OrderCloseTime()
+        // |OrderOpenPrice() or OrderClosePrice()
+        // |OrderLots()
         int k = StringSplit(strMsg, u_sep, prop);
-        if (k != 7) {
+        if (k != 8) {
             Print("" + i + ". message [" + strMsg + "] was not properly split.");
             continue;
         }
 
+        if (prop[1] != SymbolIn) {
+            continue;
+        }
+
         int err;
-        string symbol;
-        if (ReverseOrder) {
-            // reverse the order
-            if (prop[2] == "Open") {
-                // open an order
-                if (prop[1] == "LLG") {
-                    symbol = "XAUUSD";
-                }
+        string symbol = SymbolTrading;
+        bool reverseOrder;
+        if (prop[4] == "R") {
+            reverseOrder = true;
+        } else {
+            reverseOrder = false;
+        }
+        // reverse the order
+        if (prop[2] == "Open") {
+            // open an order
+            if (reverseOrder) {
+                // reverse the original order
                 // we use the original ticket number as the new order's magic number
                 if (prop[3] == "0") {
                     k = OrderSend(symbol, OP_SELL, DupLots, Bid, Slippage, StopLoss, 0
@@ -167,45 +182,74 @@ void OnTick()
                     }
                 }
             } else {
-                // close an order
-                bool r;
-                int magic = StringToInteger(prop[0]);
-                int total = OrdersTotal();
-                if (total == 0) {
-                    // no open orders
-                    return;
-                }
+                // simply follow the original order
+                if (prop[3] == "1") {
+                    k = OrderSend(symbol, OP_SELL, DupLots, Bid, Slippage, StopLoss, 0
+                        , "Forward-Sell|"+strMsg, StringToInteger(prop[0]));
 
-                // find the order which has the magic number
-                // and get its ticket number for later use
-                int ticket = -1;
-                for (int pos=0; pos<total; pos++) {
-                    if (OrderSelect(pos, SELECT_BY_POS) == false)
-                        continue;
-                    if (magic == OrderMagicNumber()) {
-                        ticket = OrderTicket();
-                        break;
+                    Print( "Forward-Sell, ticket=" + k );
+                    if (k<0) {
+                        err = GetLastError();
+                        Print( "Forward-Sell, ErrorCode:" + err + "," + ErrorDescription(err) );
+                    }
+                } else {
+                    k = OrderSend(symbol, OP_BUY, DupLots, Ask, Slippage, StopLoss, 0
+                        , "Forward-Buy|"+strMsg, StringToInteger(prop[0]));
+
+                    Print( "Forward-Buy, ticket=" + k );
+                    if (k<0) {
+                        err = GetLastError();
+                        Print( "Forward-Buy failed, ErrorCode:" + err + "," + ErrorDescription(err) );
                     }
                 }
-                if (ticket < 0) {
-                    return;
-                }
+            }
+        } else {
+            // close an order
+            bool r;
+            int magic = StringToInteger(prop[0]);
+            int total = OrdersTotal();
+            if (total == 0) {
+                // no open orders
+                return;
+            }
 
-                // close the order now
-                for (int pos=0; pos<10; pos++) {
-                    if (prop[3] == "0") {
+            // find the order which has the magic number
+            // and get its ticket number for later use
+            int ticket = -1;
+            for (int pos=0; pos<total; pos++) {
+                if (OrderSelect(pos, SELECT_BY_POS) == false)
+                    continue;
+                if (magic == OrderMagicNumber()) {
+                    ticket = OrderTicket();
+                    break;
+                }
+            }
+            if (ticket < 0) {
+                return;
+            }
+
+            // close the order now
+            for (int pos=0; pos<10; pos++) {
+                if (prop[3] == "0") {
+                    if (reverseOrder) {
                         r = OrderClose(ticket, DupLots, Ask, Slippage);
                     } else {
                         r = OrderClose(ticket, DupLots, Bid, Slippage);
                     }
-                    if (!r) {
-                        err = GetLastError();
-                        Print("OrderClose("+ticket+") failed ErrorCode:" + err + "," + ErrorDescription(err) + ", try:" + pos);
-                        Sleep( 1000 ); // sleep for 1 second and have another try
-                        continue;
+                } else {
+                    if (reverseOrder) {
+                        r = OrderClose(ticket, DupLots, Bid, Slippage);
+                    } else {
+                        r = OrderClose(ticket, DupLots, Ask, Slippage);
                     }
-                    break;
                 }
+                if (!r) {
+                    err = GetLastError();
+                    Print("OrderClose("+ticket+") failed ErrorCode:" + err + "," + ErrorDescription(err) + ", try:" + pos);
+                    Sleep( 1000 ); // sleep for 1 second and have another try
+                    continue;
+                }
+                break;
             }
         }
     }

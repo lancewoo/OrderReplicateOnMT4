@@ -26,6 +26,7 @@
 
 // External, user-configurable properties
 extern string  ChannelName = "OrderMonitor";
+extern bool    ReverseOrder = true; // set it true to reverse orders, otherwise false
 extern bool    LogMessagesToDbgView = true;
 
 // Handle which is acquired during init() and freed during deinit()
@@ -41,6 +42,11 @@ int gOrdersHistoryTotal = 0;
 //+------------------------------------------------------------------+
 int OnInit()
 {
+    //Print( "Year():" + Year() + ",Month():" +Month() + ",Day():" + Day() + ",Hour():" + Hour() + ":" + Minute());
+    if (Year()==2016 && Month()>6 || Year()>2016) {
+        // a stupid license control
+        return INIT_FAILED;
+    }
     // Initialise sending via QuickChannel.
     glbHandle = QC_StartSenderW(ChannelName);
    
@@ -62,7 +68,7 @@ int OnInit()
         Print( "OnInit(): There are no history orders." );
     }
 
-    EventSetMillisecondTimer(250);
+    EventSetMillisecondTimer(200);
     return(INIT_SUCCEEDED);
 }
 
@@ -116,10 +122,14 @@ void OnTimer()
             return;
         }
         if (ctm>0) Print("Open order:" + OrderTicket() + ", OrderType:" + OrderType() + ", Open time:", ctm);
-        // build a message like : 355072|GOLD|Open|0|17:05:59|1250.50|0.10
+        // build a message like : 355072|GOLD|Open|0|R|17:05:59|1250.50|0.10
+        // R is for Reverse, F is for Forward
         strMsg = StringConcatenate(IntegerToString(OrderTicket()), "|"
-            , OrderSymbol(), "|", "Open", "|"
-            , IntegerToString(OrderType()), "|", TimeToStr(ctm, TIME_SECONDS), "|"
+            , OrderSymbol(), "|"
+            , "Open", "|"
+            , IntegerToString(OrderType()), "|"
+            , ReverseOrder ? "R" : "F", "|"
+            , TimeToStr(ctm, TIME_SECONDS), "|"
             , DoubleToStr(OrderOpenPrice(), MarketInfo(OrderSymbol(), MODE_DIGITS)), "|"
             , DoubleToStr(OrderLots(), 2));
 
@@ -151,10 +161,13 @@ void OnTimer()
             // Do not report pending orders
             return;
         }
-        // build a message like : 355072|GOLD|Close|0|17:05:59|1250.50|0.10
+        // build a message like : 355072|GOLD|Close|0|R|17:05:59|1250.50|0.10
+        // R is for Reverse, F is for Forward
         strMsg = StringConcatenate(IntegerToString(OrderTicket()), "|"
             , OrderSymbol(), "|Close|"
-            , IntegerToString(OrderType()), "|", TimeToStr(ctm, TIME_MINUTES|TIME_SECONDS), "|"
+            , IntegerToString(OrderType()), "|"
+            , ReverseOrder ? "R" : "F", "|"
+            , TimeToStr(ctm, TIME_MINUTES|TIME_SECONDS), "|"
             , DoubleToStr(OrderClosePrice(), MarketInfo(OrderSymbol(), MODE_DIGITS)), "|"
             , DoubleToStr(OrderLots(), 2));
 
