@@ -29,14 +29,17 @@
 extern string  ChannelName = "OrderMonitor";
 extern string  SymbolIn = "GOLD"; // Symbol to be copied
 extern string  SymbolTrading = "XAUUSD"; // Symbol to be traded
+extern bool    SymbolInCheck = false; // Whether the symbol to be copied should be checked
 extern double  DupLots = 1; // Number of lots you want to copy each time
 extern double  StopLoss = 0.0; // Stoploss for each order
-extern int  Slippage = 50; // Slippage pips
+extern int  Slippage = 99; // Slippage pips
 extern bool    LogMessagesToDbgView = true;
 
 
 // Handle which is acquired during start() and freed during deinit()
 int glbHandle = 0;
+// log file handler
+int logFile = 0;
 
 #define QC_BUFFER_SIZE  10000
 
@@ -45,6 +48,15 @@ int glbHandle = 0;
 //+------------------------------------------------------------------+
 int OnInit()
 {
+    logFile = FileOpen("OrderReplicate.txt"
+            , FILE_READ|FILE_WRITE|FILE_TXT|FILE_UNICODE|FILE_SHARE_READ|FILE_SHARE_WRITE); 
+    if (logFile == INVALID_HANDLE) {
+        return INIT_FAILED;
+        Print("-----------OnInit FileOpen failed!---------------");
+    }
+    FileSeek(logFile, 0, SEEK_END);
+    FileWrite(logFile, TimeLocal(), ",", "-----------OnInit---------------");
+    FileFlush(logFile);
     Print("-----------OnInit---------------");
     return(INIT_SUCCEEDED);
 }
@@ -56,6 +68,11 @@ void OnDeinit(const int reason)
     // EventKillTimer();
     if (glbHandle) {
         QC_ReleaseReceiver(glbHandle);
+    }
+    FileWrite(logFile, TimeLocal(), ",", "-----------OnDeinit---------------");
+    FileFlush(logFile);
+    if (logFile) {
+        FileClose( logFile );
     }
     glbHandle = 0;
 }
@@ -73,6 +90,8 @@ void OnTick()
         glbHandle = QC_StartReceiverW(ChannelName, WindowHandle(Symbol(), Period()));
 
         if (glbHandle == 0) {
+            FileWrite(logFile, TimeLocal(), ",", "Failed to get a QuickChannel receiver handle");
+            FileFlush(logFile);
             Alert("Failed to get a QuickChannel receiver handle");
             return;
         }
@@ -83,7 +102,10 @@ void OnTick()
     int res = QC_GetMessages5W(glbHandle, buffer, QC_BUFFER_SIZE);
 
     if (res == -1) {
-        Alert("QuickChannel encountered an error:" + GetLastError());
+        string errMsg = "QuickChannel encountered an error:" + GetLastError();
+        FileWrite(logFile, TimeLocal(), ",", errMsg);
+        FileFlush(logFile);
+        Alert(errMsg);
         return;
     } else if (res == 0) {
         // No pending messages 
@@ -96,6 +118,7 @@ void OnTick()
         // If we get a message from the sender, then
         // we simply log it.
         if (LogMessagesToDbgView) OutputDebugStringA("QuickChannel message received:" + strMsgList);
+        FileWrite(logFile, TimeLocal(), ",", "QuickChannel message received:" + strMsgList);
         Print("QuickChannel message received:" + strMsgList);
     }
 
@@ -140,11 +163,14 @@ void OnTick()
         // |OrderLots()
         int k = StringSplit(strMsg, u_sep, prop);
         if (k != 8) {
+            FileWrite(logFile, TimeLocal(), ",", "" + i + ". message [" + strMsg + "] was not properly split.");
             Print("" + i + ". message [" + strMsg + "] was not properly split.");
             continue;
         }
 
-        if (prop[1] != SymbolIn) {
+        // if the incoming symbol is not checked,
+        // we assume that symbol is the same as this one to be traded.
+        if (SymbolInCheck && prop[1] != SymbolIn) {
             continue;
         }
 
@@ -163,42 +189,54 @@ void OnTick()
                 // reverse the original order
                 // we use the original ticket number as the new order's magic number
                 if (prop[3] == "0") {
+                    Print( "Reverse-Sell, before OrderSend");
                     k = OrderSend(symbol, OP_SELL, DupLots, Bid, Slippage, StopLoss, 0
                         , "Reverse-Sell|"+strMsg, StringToInteger(prop[0]));
 
+                    FileWrite(logFile, TimeLocal(), ",", "Reverse-Sell, ticket=" + k);
                     Print( "Reverse-Sell, ticket=" + k );
                     if (k<0) {
                         err = GetLastError();
+                        FileWrite(logFile, TimeLocal(), ",", "Reverse-Sell, ErrorCode:" + err + "," + ErrorDescription(err));
                         Print( "Reverse-Sell, ErrorCode:" + err + "," + ErrorDescription(err) );
                     }
                 } else {
+                    Print( "Reverse-Buy, before OrderSend");
                     k = OrderSend(symbol, OP_BUY, DupLots, Ask, Slippage, StopLoss, 0
                         , "Reverse-Buy|"+strMsg, StringToInteger(prop[0]));
 
+                    FileWrite(logFile, TimeLocal(), ",", "Reverse-Buy, ticket=" + k);
                     Print( "Reverse-Buy, ticket=" + k );
                     if (k<0) {
                         err = GetLastError();
+                        FileWrite(logFile, TimeLocal(), ",", "Reverse-Buy failed, ErrorCode:" + err + "," + ErrorDescription(err));
                         Print( "Reverse-Buy failed, ErrorCode:" + err + "," + ErrorDescription(err) );
                     }
                 }
             } else {
                 // simply follow the original order
                 if (prop[3] == "1") {
+                    Print( "Forward-Sell, before OrderSend");
                     k = OrderSend(symbol, OP_SELL, DupLots, Bid, Slippage, StopLoss, 0
                         , "Forward-Sell|"+strMsg, StringToInteger(prop[0]));
 
+                    FileWrite(logFile, TimeLocal(), ",", "Forward-Sell, ticket=" + k);
                     Print( "Forward-Sell, ticket=" + k );
                     if (k<0) {
                         err = GetLastError();
+                        FileWrite(logFile, TimeLocal(), ",", "Forward-Sell, ErrorCode:" + err + "," + ErrorDescription(err));
                         Print( "Forward-Sell, ErrorCode:" + err + "," + ErrorDescription(err) );
                     }
                 } else {
+                    Print( "Forward-Buy, before OrderSend");
                     k = OrderSend(symbol, OP_BUY, DupLots, Ask, Slippage, StopLoss, 0
                         , "Forward-Buy|"+strMsg, StringToInteger(prop[0]));
 
+                    FileWrite(logFile, TimeLocal(), ",", "Forward-Buy, ticket=" + k);
                     Print( "Forward-Buy, ticket=" + k );
                     if (k<0) {
                         err = GetLastError();
+                        FileWrite(logFile, TimeLocal(), ",", "Forward-Buy failed, ErrorCode:" + err + "," + ErrorDescription(err));
                         Print( "Forward-Buy failed, ErrorCode:" + err + "," + ErrorDescription(err) );
                     }
                 }
@@ -230,6 +268,9 @@ void OnTick()
 
             // close the order now
             for (int pos=0; pos<10; pos++) {
+                FileWrite(logFile, TimeLocal(), ",", "OrderClose("+ticket+") begins.");
+                Print("OrderClose("+ticket+") begins.");
+
                 if (prop[3] == "0") {
                     if (reverseOrder) {
                         r = OrderClose(ticket, DupLots, Ask, Slippage);
@@ -243,8 +284,12 @@ void OnTick()
                         r = OrderClose(ticket, DupLots, Ask, Slippage);
                     }
                 }
+                FileWrite(logFile, TimeLocal(), ",", "OrderClose("+ticket+") returned:" + r);
+                Print("OrderClose("+ticket+") returned:" + r);
+
                 if (!r) {
                     err = GetLastError();
+                    FileWrite(logFile, TimeLocal(), ",", "OrderClose("+ticket+") failed ErrorCode:" + err + "," + ErrorDescription(err) + ", try:" + pos);
                     Print("OrderClose("+ticket+") failed ErrorCode:" + err + "," + ErrorDescription(err) + ", try:" + pos);
                     Sleep( 1000 ); // sleep for 1 second and have another try
                     continue;
@@ -253,7 +298,7 @@ void OnTick()
             }
         }
     }
-
+    FileFlush(logFile);
 }
 //+------------------------------------------------------------------+
 

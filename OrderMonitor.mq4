@@ -8,6 +8,8 @@
 #property version   "1.00"
 #property strict
 
+#include <stderror.mqh> 
+#include <stdlib.mqh> 
 
 // DLL imports from the QuickChannel library. Requires "Allow DLL imports"
 // to be turned on
@@ -31,6 +33,8 @@ extern bool    LogMessagesToDbgView = true;
 
 // Handle which is acquired during init() and freed during deinit()
 int glbHandle = 0;
+// log file handler
+int logFile = 0;
 
 // number of orders currently held
 int gOrdersTotal = 0;
@@ -47,28 +51,45 @@ int OnInit()
         // a stupid license control
         return INIT_FAILED;
     }
+    logFile = FileOpen("OrderMonitor-" + AccountInfoInteger(ACCOUNT_LOGIN) + ".txt"
+            , FILE_READ|FILE_WRITE|FILE_TXT|FILE_UNICODE|FILE_SHARE_READ|FILE_SHARE_WRITE); 
+    if (logFile == INVALID_HANDLE) {
+        return INIT_FAILED;
+        Print("-----------OnInit FileOpen failed!---------------");
+    }
+    FileSeek(logFile, 0, SEEK_END);
+    FileWrite(logFile, TimeLocal(), ",", "-----------OnInit---------------");
+    FileFlush(logFile);
+
     // Initialise sending via QuickChannel.
     glbHandle = QC_StartSenderW(ChannelName);
    
     if (glbHandle == 0) {
+        FileWrite(logFile, TimeLocal(), ",", "Failed to get a QuickChannel sender handle");
+        FileFlush(logFile);
         Alert("Failed to get a QuickChannel sender handle");
         return INIT_FAILED;
     }
 
     gOrdersTotal = OrdersTotal();
     if (gOrdersTotal > 0) {
+        FileWrite(logFile, TimeLocal(), ",", "OnInit(): There are " + gOrdersTotal + " open orders in total.");
         Print( "OnInit(): There are " + gOrdersTotal + " open orders in total." );
     } else {
+        FileWrite(logFile, TimeLocal(), ",", "OnInit(): There are no open orders.");
         Print( "OnInit(): There are no open orders." );
     }
     gOrdersHistoryTotal = OrdersHistoryTotal();
     if (gOrdersHistoryTotal > 0) {
+        FileWrite(logFile, TimeLocal(), ",", "OnInit(): There are " + gOrdersHistoryTotal + " history orders in total.");
         Print( "OnInit(): There are " + gOrdersHistoryTotal + " history orders in total." );
     } else {
+        FileWrite(logFile, TimeLocal(), ",", "OnInit(): There are no history orders.");
         Print( "OnInit(): There are no history orders." );
     }
+    FileFlush(logFile);
 
-    EventSetMillisecondTimer(200);
+    EventSetMillisecondTimer(50);
     return(INIT_SUCCEEDED);
 }
 
@@ -82,12 +103,17 @@ void OnDeinit(const int reason)
     // initialised earlier
     QC_ReleaseSender(glbHandle);
     glbHandle = 0;
+
+    FileWrite(logFile, TimeLocal(), ",", "-----------OnDeinit---------------");
+    FileFlush(logFile);
+    FileClose(logFile);
 }
 
 
 void OnTimer()
 {
     if (glbHandle == 0) {
+        FileWrite(logFile, TimeLocal(), ",", "QuickChannel sender handle was not properly initialised!");
         Alert("QuickChannel sender handle was not properly initialised!");
         return;
     }
@@ -102,6 +128,8 @@ void OnTimer()
     if (OrdersTotal() == gOrdersTotal) {
         return;
     }
+
+    int err;
     string strMsg = "";
     // TODO: what if there is a pending order???
     // Only market orders are considered
@@ -111,7 +139,9 @@ void OnTimer()
         // we'd only consider the one order case, and
         // if there are more, it's safe to leave them to later tick events.
         if (!OrderSelect(gOrdersTotal, SELECT_BY_POS)) {
-            Print("OrderSelect failed error code is: ", GetLastError());
+            err = GetLastError();
+            FileWrite(logFile, TimeLocal(), ",", "OrderSelect failed error code is: " + err + "," + ErrorDescription(err));
+            Print("OrderSelect failed error code is: " + err + "," + ErrorDescription(err));
             return;
         }
         gOrdersTotal += 1;
@@ -121,7 +151,10 @@ void OnTimer()
             // Do not report pending orders
             return;
         }
-        if (ctm>0) Print("Open order:" + OrderTicket() + ", OrderType:" + OrderType() + ", Open time:", ctm);
+        if (ctm>0) {
+            FileWrite(logFile, TimeLocal(), ",", "Open order:" + OrderTicket() + ", OrderType:" + OrderType() + ", Open time:", ctm);
+            Print("Open order:" + OrderTicket() + ", OrderType:" + OrderType() + ", Open time:", ctm);
+        }
         // build a message like : 355072|GOLD|Open|0|R|17:05:59|1250.50|0.10
         // R is for Reverse, F is for Forward
         strMsg = StringConcatenate(IntegerToString(OrderTicket()), "|"
@@ -151,11 +184,16 @@ void OnTimer()
 
     if (OrdersHistoryTotal() > gOrdersHistoryTotal) {
         if (!OrderSelect(gOrdersHistoryTotal, SELECT_BY_POS, MODE_HISTORY)) {
-            Print("OrderSelect failed error code is: ", GetLastError());
+            err = GetLastError();
+            FileWrite(logFile, TimeLocal(), ",", "OrderSelect failed error code is: "+ err + "," + ErrorDescription(err));
+            Print("OrderSelect failed error code is: " + err + "," + ErrorDescription(err));
             return;
         }
         datetime ctm = OrderCloseTime();
-        if(ctm>0) Print("History order:" + OrderTicket() + ", OrderType:" + OrderType() + ", Close time :", ctm);
+        if(ctm>0) {
+            FileWrite(logFile, TimeLocal(), ",", "History order:" + OrderTicket() + ", OrderType:" + OrderType() + ", Close time :", ctm);
+            Print("History order:" + OrderTicket() + ", OrderType:" + OrderType() + ", Close time :", ctm);
+        }
 
         if (OrderType() > OP_SELL) {
             // Do not report pending orders
@@ -175,6 +213,7 @@ void OnTimer()
     }
 
     // Optional message logging
+    FileWrite(logFile, TimeLocal(), ",", "QuickChannel message sent:" + strMsg);
     Print("QuickChannel message sent:" + strMsg);
     if (LogMessagesToDbgView) OutputDebugStringA("QuickChannel message sent:" + strMsg);
 
@@ -184,8 +223,10 @@ void OnTimer()
     // itself uses tabs to delimit multiple messages 
     int result = QC_SendMessageW(glbHandle, strMsg, 0);
     if (result == 0) {
+        FileWrite(logFile, TimeLocal(), ",", "QuickChannel message failed");
         Alert("QuickChannel message failed");
     }
+    FileFlush(logFile);
 }
 
 
