@@ -27,9 +27,10 @@
 
 // External, user-configurable properties
 extern string  ChannelName = "OrderMonitor";
-extern string  SymbolIn = "GOLD"; // Symbol to be copied
+extern string  SymbolIn = "XAUUSD"; // Symbol to be copied
 extern string  SymbolTrading = "XAUUSD"; // Symbol to be traded
-extern bool    SymbolInCheck = false; // Whether the symbol to be copied should be checked
+extern bool    SymbolInCheck = false; // 是否检查交易品种代码，如果不检查，不管什么品种每来一个单子都会跟。 如果检查，会严格按照指定的品种交易。
+                                      // Whether the symbol to be copied should be checked
 extern double  DupLots = 1; // Number of lots you want to copy each time
 extern double  StopLoss = 0.0; // Stoploss for each order
 extern int  Slippage = 99; // Slippage pips
@@ -168,14 +169,21 @@ void OnTick()
             continue;
         }
 
+        string symbol = prop[1];
+
         // if the incoming symbol is not checked,
         // we assume that symbol is the same as this one to be traded.
-        if (SymbolInCheck && prop[1] != SymbolIn) {
-            continue;
+        if (SymbolInCheck) {
+            if (prop[1] != SymbolIn) {
+                FileWrite(logFile, TimeLocal(), ",", "" + i + ". 跟踪品种 [" + prop[1] + "] 与指定品种[" + SymbolIn + "]不同，不跟单。");
+                Print("" + i + ". 跟踪品种 [" + prop[1] + "] 与指定品种[" + SymbolIn + "]不同，不跟单。");
+                continue;
+            } else {
+                symbol = SymbolTrading;
+            }
         }
 
         int err;
-        string symbol = SymbolTrading;
         bool reverseOrder;
         if (prop[4] == "R") {
             reverseOrder = true;

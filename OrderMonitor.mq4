@@ -47,10 +47,10 @@ int gOrdersHistoryTotal = 0;
 int OnInit()
 {
     //Print( "Year():" + Year() + ",Month():" +Month() + ",Day():" + Day() + ",Hour():" + Hour() + ":" + Minute());
-    if (Year()==2016 && Month()>6 || Year()>2016) {
-        // a stupid license control
-        return INIT_FAILED;
-    }
+    // if (Year()==2016 && Month()>6 || Year()>2016) {
+    //     // a stupid license control
+    //     return INIT_FAILED;
+    // }
     logFile = FileOpen("OrderMonitor-" + AccountInfoInteger(ACCOUNT_LOGIN) + ".txt"
             , FILE_READ|FILE_WRITE|FILE_TXT|FILE_UNICODE|FILE_SHARE_READ|FILE_SHARE_WRITE); 
     if (logFile == INVALID_HANDLE) {
